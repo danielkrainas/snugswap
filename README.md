@@ -7,7 +7,6 @@
 ![Lua](https://img.shields.io/badge/language-Lua-2C2D72?logo=lua&logoColor=white)
 ![Version](https://img.shields.io/badge/version-v1.0.0-beta)
 [![License: CC0](https://img.shields.io/badge/license-CC0-blue.svg)](https://creativecommons.org/publicdomain/zero/1.0/)
-[![Discord](https://img.shields.io/discord/1446572626217795717?label=Discord&logo=discord&logoColor=white&color=5865F2)](https://discord.gg/zX9UQneZWt)
 [![Issues](https://img.shields.io/github/issues/danielkrainas/snugswap)](https://github.com/danielkrainas/snugswap)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
 
