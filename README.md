@@ -19,6 +19,47 @@ Instead of writing a lot of `if spell.type == ... then equip(sets.foo)` logic, y
 * Attach simple **conditions** (status, spell type, weather, pet out, etc)
 * Let SnugSwap handle `precast`, `midcast`, `aftercast`, `status_change`, and pet events for you
 
+## Table of Contents
+
+* [SnugSwap](#snugswap)
+
+  * [Features](#features)
+  * [Installation](#installation)
+
+    * [Recommended: Auto-wire all GearSwap callbacks](#recommended-auto-wire-all-gearswap-callbacks)
+    * [Alternative: Manual wiring (if you want custom hook logic)](#alternative-manual-wiring-if-you-want-custom-hook-logic)
+  * [Quick Start](#quick-start)
+
+    * [1. Define a mode](#1-define-a-mode)
+    * [2. Default weapon / idle / engaged sets](#2-default-weapon--idle--engaged-sets)
+    * [3. Mode-based gear with `gearset_from_mode`](#3-mode-based-gear-with-gearset_from_mode)
+  * [Conditional Gear with `gearset(...)`](#conditional-gear-with-gearset)
+  * [Combining Sets](#combining-sets)
+  * [Spells, Skills, and Weapon Skills](#spells-skills-and-weapon-skills)
+
+    * [Fast Cast](#fast-cast)
+    * [Precast / Midcast / Both](#precast--midcast--both)
+    * [Weapon Skills](#weapon-skills)
+  * [Modes with Gear Mappings](#modes-with-gear-mappings)
+  * [Utility Sets](#utility-sets)
+
+    * [Defining utility sets](#defining-utility-sets)
+    * [Using them in-game](#using-them-in-game)
+  * [In-Game Commands Summary](#in-game-commands-summary)
+
+    * [Modes](#modes)
+    * [Utility sets](#utility-sets-1)
+    * [Weapon cycling](#weapon-cycling)
+  * [Debugging & Tracing](#debugging--tracing)
+  * [Advanced Stuff (Optional)](#advanced-stuff-optional)
+
+    * [Middleware: `snugs:register_middleware`](#middleware-snugsregister_middleware-optional-but-powerful)
+    * [Custom predicate extensions with `snugs:extend_predicate`](#custom-predicate-extensions-with-snugsextend_predicate)
+    * [Predicates directly: `when()` and `where()`](#predicates-directly-when-and-where)
+    * [Selectors: `use`, `choose_from`, and `choose_all`](#selectors-use-choose_from-and-choose_all)
+  * [Minimal Example](#minimal-example)
+  * [License](#-license)
+
 ## Features
 
 * **Simple default sets** for:
