@@ -5,7 +5,7 @@
 # SnugSwap
 
 ![Lua](https://img.shields.io/badge/language-Lua-2C2D72?logo=lua&logoColor=white)
-![Version](https://img.shields.io/badge/version-v1.0.0-beta)
+![Version](https://img.shields.io/badge/version-v1.0.0-2C2D72)
 [![License: CC0](https://img.shields.io/badge/license-CC0-blue.svg)](https://creativecommons.org/publicdomain/zero/1.0/)
 [![Issues](https://img.shields.io/github/issues/danielkrainas/snugswap)](https://github.com/danielkrainas/snugswap)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
@@ -18,6 +18,10 @@ Instead of writing a lot of `if spell.type == ... then equip(sets.foo)` logic, y
 * Define your **gear sets**
 * Attach simple **conditions** (status, spell type, weather, pet out, etc)
 * Let SnugSwap handle `precast`, `midcast`, `aftercast`, `status_change`, and pet events for you
+
+Already know the basics? [**docs/RECIPES.md**](docs/RECIPES.md) has ready-to-adapt snippets for the
+situations that come up most — playstyle modes, elemental obis, pet-aware sets, spell families,
+weapon-locking while casting, and more.
 
 ## Table of Contents
 
@@ -39,6 +43,7 @@ Instead of writing a lot of `if spell.type == ... then equip(sets.foo)` logic, y
 
     * [Fast Cast](#fast-cast)
     * [Precast / Midcast / Both](#precast--midcast--both)
+    * [How a set is chosen](#how-a-set-is-chosen)
     * [Weapon Skills](#weapon-skills)
   * [Modes with Gear Mappings](#modes-with-gear-mappings)
   * [Utility Sets](#utility-sets)
@@ -58,6 +63,8 @@ Instead of writing a lot of `if spell.type == ... then equip(sets.foo)` logic, y
     * [Predicates directly: `when()` and `where()`](#predicates-directly-when-and-where)
     * [Selectors: `use`, `choose_from`, and `choose_all`](#selectors-use-choose_from-and-choose_all)
   * [Minimal Example](#minimal-example)
+  * [Recipes](docs/RECIPES.md)
+  * [Development](#development)
   * [License](#-license)
 
 ## Features
@@ -114,7 +121,7 @@ This is the easiest and most common setup.
 ### **Recommended: Auto-wire all GearSwap callbacks**
 
 ```lua
-include('snugswap.lua')
+include('snugswap')
 
 function get_sets()
     -- define all your sets and modes here using snugs
@@ -407,8 +414,26 @@ Available helpers:
 * `snugs:precast_all({names}, set)`
 * `snugs:midcast_all({names}, set)`
 * `snugs:premidcast_all({names}, set)`
+* `snugs:fastcast(name, set)` / `snugs:fastcast_all({names}, set)`
 
-You can also define **skill-based** sets (`"Enhancing Magic"`, `"Divine Magic"`, etc.) that apply to all spells of that skill if no spell-name-specific set is defined.
+### How a set is chosen
+
+For any action SnugSwap tries these keys in order and equips the **first** one you registered:
+
+| Key | Example | Covers |
+| --- | --- | --- |
+| Spell name | `"Cure IV"` | that one spell |
+| Family | `"AllCure"` | every tier — `Cure` through `Cure VI` |
+| Type | `"WhiteMagic"`, `"BardSong"` | every action of that type |
+| Skill | `"Healing Magic"`, `"Blue Magic"` | every spell of that skill |
+
+Only one of them wins. To *layer* instead of override, register the broad set and combine the
+narrow gear onto it with a `key` condition:
+
+```lua
+snugs:midcast("Healing Magic", gearset(healing_set):and_combine(
+    gearset(cure_set):when():key("AllCure")))
+```
 
 ### Weapon Skills
 
@@ -469,7 +494,7 @@ You can define general “utility” sets you call via `gs c util` or short comm
 
 ```lua
 snugs:util("warp", {
-    ring1="Warp Ring",
+    left_ring="Warp Ring",
 })
 
 snugs:util("speed", {
@@ -522,10 +547,12 @@ Examples:
 
 ### Weapon cycling
 
-If you defined named weapon sets with `snugs:weaponset("name", set)`, you can cycle them:
+If you defined named weapon sets with `snugs:weaponset("name", set)`, you can cycle through them or
+jump straight to one:
 
 ```text
 //gs c cycle weapon
+//gs c set weapon procclub
 ```
 
 SnugSwap remembers the current weapon set and equips it on status resets.
@@ -537,16 +564,19 @@ SnugSwap remembers the current weapon set and equips it on status resets.
 If you want to see what SnugSwap is doing:
 
 ```text
-//gs c set debug true
-```
-
-Enables extra debug output (green text).
-
-```text
 //gs c set trace true
 ```
 
-Prints a full breakdown of the **final** gear set that’s being equipped, slot by slot. Very handy when you’re stacking multiple `gearset(...):and_combine(...)` layers and want to see the result.
+Tracing is the one you want. It prints a full breakdown of the **final** gear set being equipped,
+slot by slot, along with each middleware that ran. It is the fastest way to answer "why did it
+equip *that*" when you are stacking several `gearset(...):and_combine(...)` layers. It also stops
+repeated warnings from being suppressed, so you see every occurrence rather than just the first.
+
+```text
+//gs c set debug true
+```
+
+Debug is a quieter switch — right now it only surfaces warnings about predicates being redefined.
 
 Turn them off with:
 
@@ -625,40 +655,33 @@ ctx:set_meta(k, v)
 ctx:get_meta(k)
 ```
 
-SnugSwap automatically seeds lookup keys from spells (when present), in this order:
+Lookup keys are ordered **most specific first**, and middleware runs in the middle of that list:
 
-- spell.english
-- spell.type
-- spell.skill (if present)
+1. `spell.english` — the exact spell or ability name
+2. keys added by middleware — the built-in `All<Base>` family key, plus anything you add
+3. `spell.type`
+4. `spell.skill` (if present)
 
-Then your middleware may add additional keys.
+So a key your middleware adds outranks a skill-wide registration but still loses to an exact spell
+name. `ctx:prepend_lookup(key)` puts a key ahead of everything, including the spell name.
 
-Example: adding spell family keys
+Example: grouping every spell of the same element
 
 ```lua
 snugs:register_middleware("any", function(ctx)
-    if not ctx.spell then return end
-
-    -- Ninjutsu: "Katon: Ichi" -> "AllKaton"
-    if ctx.spell.type == "Ninjutsu" then
-        local base = ctx.spell.english:match("^(.-):%s*(Ichi|Ni|San)$")
-        if base then ctx:add_lookup("All" .. base) end
-        return
+    if ctx.spell and ctx.spell.element then
+        ctx:add_lookup("Element:" .. ctx.spell.element)
     end
-
-    -- Magic: "Cure IV" -> "AllCure"
-    local base = ctx.spell.english:match("^(.-)%s*(I|II|III|IV|V|VI)$")
-    if base then ctx:add_lookup("All" .. base) end
-end, { name = "spell_families", priority = 0 })
+end, { name = "element_keys", priority = 10 })
 ```
-
-Now you can trigger use of family gearsets:
 
 ```lua
-sets.midcast.AllCure = { ... }
-sets.midcast.AllThunder = { ... }
-sets.midcast.AllKaton = { ... }
+snugs:midcast("Element:Dark", dark_nuke_set)
 ```
+
+> **Note:** spell families are already built in — SnugSwap adds an `All<Base>` key to every action
+> with the tier suffix stripped, so `AllCure` covers `Cure` through `Cure VI` and `AllKaton` covers
+> all three tiers of Katon. You do not need middleware for that.
 
 ---
 
@@ -861,7 +884,7 @@ local regen_selector = use(
 )
 
 local dt_selector = use(
-    gearset({ ring1="Defending Ring" }),
+    gearset({ right_ring="Defending Ring" }),
     when():status("Engaged")
 )
 ```
@@ -901,7 +924,7 @@ local engaged_combo = choose_all(
     use(gearset({ body="Nyame Mail" }), when():status("Engaged")),
 
     -- add DT pieces when in tank mode
-    use(gearset({ ring1="Defending Ring" }), when():mode_is("style", "tank")),
+    use(gearset({ right_ring="Defending Ring" }), when():mode_is("style", "tank")),
 
     -- add emergency gear if HP low
     use(gearset({ feet="Valorous Greaves" }), when():hpp_less_than(40))
@@ -985,6 +1008,22 @@ function pet_change(p, g)       snugs:do_pet_change(p, g)       end
 function pet_midcast(spell)     snugs:do_pet_midcast(spell)     end
 function pet_aftercast(spell)   snugs:do_pet_aftercast(spell)   end
 ```
+
+## Development
+
+SnugSwap ships as a single file with no runtime dependencies, and its tests have none either — a
+stock Lua install is all you need.
+
+```text
+make test                    # run the suite
+make test FILE=predicates    # run one file
+make test MATCH="obi"        # run tests whose name matches
+make check                   # syntax-check the library and the tests
+```
+
+The suite runs against a stand-in for the Windower and GearSwap globals, so it exercises the real
+library without the game. Each test reloads `snugswap.lua` from scratch, so nothing leaks between
+them.
 
 ## ✦ License
 

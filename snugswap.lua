@@ -137,7 +137,7 @@ SnugSwap.__index = SnugSwap
 
 function SnugSwap:new()
     local obj = setmetatable({
-        VERSION = "1.0.0-beta",
+        VERSION = "1.0.0",
         DEFAULT_SET_NAME = DEFAULT_SET_NAME,
         weaponset_cycle_list = {},
         current_weapon = nil,
