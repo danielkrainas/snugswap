@@ -148,8 +148,8 @@ snugs:add_mode("MagicBurstMode", {
     description   = "Elemental Magic Burst Mode.",
 })
 
--- reset MagicBurstMode back to "off" as soon as it has been used once
-snugs:register_middleware("any",
+-- reset MagicBurstMode back to "off" once the spell has finished
+snugs:register_middleware("aftercast",
     create_once_mode_transition("MagicBurstMode", "off",
         when():mode_is("MagicBurstMode", "Single")))
 
@@ -160,9 +160,20 @@ snugs:midcast("Elemental Magic", gearset(nuke_set):and_combine(gearset({
 }):when():mode_is("MagicBurstMode", "Single")))
 ```
 
-Register on `"any"` and the reset fires on the first phase of the next action, so the burst set is
-still live for the cast that consumed it. Register on `"aftercast"` instead if you want the mode to
-survive until the spell finishes resolving.
+**The phase matters, and `"aftercast"` is the only one that works here.** Middleware runs inside
+`_new_context`, before any set for that action is evaluated. Registered on `"any"`, the reset fires
+during the precast of the very spell that was supposed to use the mode — so by midcast the mode is
+already `"off"` and the burst gear never goes on:
+
+| phase the transition is registered on | mode at midcast | burst gear |
+| --- | --- | --- |
+| `"any"` | already `off` | never applies |
+| `"midcast"` | already `off` | never applies |
+| `"aftercast"` | still `Single` | applies, then resets |
+
+The same reasoning applies to any once-only mode: reset it on the phase *after* the one that reads
+it. If you are unsure whether a mode is being consumed, `gs c set trace true` shows the transition
+message and the resolved set together.
 
 ## Layering conditional pieces onto a base set
 
@@ -507,6 +518,25 @@ snugs:util("physicalbp", bp_rage_set)
 snugs:util("hybridbp",   flaming_crush_set)
 ```
 
+### Specialising a shared utility set
+
+Registrations are write-once, so if a shared include already registered a name, a later
+registration is ignored with a warning. Pass `{ override = true }` to replace it — this is what lets
+a common-sets library provide defaults that individual jobs refine:
+
+```lua
+function get_sets()
+    my_common_sets(snugs)   -- registers speed, warp, nexus, ...
+
+    -- this job moves on its feet, not its finger
+    snugs:util("speed", {feet="Herald's Gaiters"}, {override = true})
+end
+```
+
+Without `override` the shared version wins and the job's own set silently does nothing, which is
+easy to miss because `gs c speed` still equips *something*. `snugs:util` returns `true` when the set
+was stored and `false` when it was rejected, if you want to assert on it.
+
 ## Jug pets and other ammo-driven modes
 
 A mode's `gearset_mappings` maps each value to a set directly — no `cycle_values` needed, they are
@@ -809,7 +839,9 @@ snugs:default_idle(a_set)
 snugs:default_idle(b_set)   -- warns, b_set is ignored
 ```
 
-Build the full set with `and_combine` instead of registering repeatedly.
+Build the full set with `and_combine` instead of registering repeatedly. Utility sets are the one
+tier with an escape hatch — `snugs:util(name, set, {override = true})` — for specialising a set a
+shared include already registered.
 
 **`and_combine` mutates the gearset it is called on.** Reusing a named gearset as a base will
 accumulate overlays across all its users:

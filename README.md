@@ -19,6 +19,9 @@ Instead of writing a lot of `if spell.type == ... then equip(sets.foo)` logic, y
 * Attach simple **conditions** (status, spell type, weather, pet out, etc)
 * Let SnugSwap handle `precast`, `midcast`, `aftercast`, `status_change`, and pet events for you
 
+Starting a new job? [**templates/**](templates/) has a ready-made file for all 22 jobs, wired up and
+commented, with every gear set left empty for you to fill in.
+
 Already know the basics? [**docs/RECIPES.md**](docs/RECIPES.md) has ready-to-adapt snippets for the
 situations that come up most — playstyle modes, elemental obis, pet-aware sets, spell families,
 weapon-locking while casting, and more.
@@ -28,6 +31,7 @@ weapon-locking while casting, and more.
 * [SnugSwap](#snugswap)
 
   * [Features](#features)
+  * [Templates](#templates)
   * [Installation](#installation)
 
     * [Recommended: Auto-wire all GearSwap callbacks](#recommended-auto-wire-all-gearswap-callbacks)
@@ -92,6 +96,31 @@ weapon-locking while casting, and more.
   * `gs c list modes`
   * Utility sets like `warp`, `nexus`, `speed`
   * e.g: `gs c util warp` will equip the warp utility set
+
+---
+
+## Templates
+
+The fastest way to start is to copy a template rather than write a file from scratch.
+
+```
+templates/
+  archetypes/   mage.lua, tank.lua, damage-dealer.lua
+  jobs/         one file per job, all 22
+```
+
+Every set in them is empty. The wiring, the modes, and the sections a job actually needs are already
+in place, with comments written for players rather than programmers. The job files are not copies of
+one skeleton — each carries what that job really needs: BLU has the spell-category tables, BRD has
+instrument modes and song families, COR has rolls and quick draw, SMN has blood pact tiers, BST has
+jug-pet ammo modes, RNG has preshot and midshot.
+
+```text
+cp templates/jobs/whm.lua  "Windower/addons/GearSwap/data/Mycharacter_WHM.lua"
+```
+
+Then fill in the `{}` sets. See [templates/README.md](templates/README.md) for what each section
+means and when it is worn.
 
 ---
 
@@ -500,6 +529,17 @@ snugs:util("warp", {
 snugs:util("speed", {
     legs="Carmine Cuisses +1",
 })
+```
+
+`snugs:util` takes an optional third argument. Registrations are write-once, so if a shared include
+already registered a name, pass `{override = true}` to replace it rather than being ignored:
+
+```lua
+function get_sets()
+    my_common_sets(snugs)   -- registers a default speed set
+
+    snugs:util("speed", {feet="Herald's Gaiters"}, {override = true})
+end
 ```
 
 ### Using them in-game
@@ -1023,7 +1063,8 @@ make check                   # syntax-check the library and the tests
 
 The suite runs against a stand-in for the Windower and GearSwap globals, so it exercises the real
 library without the game. Each test reloads `snugswap.lua` from scratch, so nothing leaks between
-them.
+them. Every file in [`templates/`](templates/) is covered too — each one has to load, register
+without warnings, and survive being driven through all of its modes.
 
 ## ✦ License
 

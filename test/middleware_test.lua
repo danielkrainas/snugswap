@@ -222,6 +222,46 @@ describe("create_once_mode_transition", function()
         assert_true(stub.said("must be a Predicate"))
     end)
 
+    -- Middleware runs inside _new_context, before any set for that action is
+    -- evaluated. A once-transition therefore has to sit on a phase LATER than
+    -- the one whose set reads the mode, or it clears the mode too early.
+    it("clears the mode before the sets are evaluated when registered on 'any'", function(snugs)
+        snugs:add_mode("burst", { initial_value = "off", cycle_values = { "off", "Single" } })
+        snugs:register_middleware("any",
+            create_once_mode_transition("burst", "off", when():mode_is("burst", "Single")))
+
+        snugs:midcast("Elemental Magic", gearset({ body = "base" })
+            :and_combine(gearset({ left_ring = "Mujin Band" }):when():mode_is("burst", "Single")))
+
+        sets.modes.burst.v = "Single"
+        snugs:do_midcast(stub.spell{ english = "Fire VI", type = "BlackMagic", skill = "Elemental Magic" })
+
+        assert_slot("left_ring", nil)
+        assert_equal(sets.modes.burst.v, "off", "the mode was consumed by the same action")
+    end)
+
+    it("keeps the mode through precast and midcast when registered on 'aftercast'", function(snugs)
+        snugs:add_mode("burst", { initial_value = "off", cycle_values = { "off", "Single" } })
+        snugs:register_middleware("aftercast",
+            create_once_mode_transition("burst", "off", when():mode_is("burst", "Single")))
+
+        snugs:midcast("Elemental Magic", gearset({ body = "base" })
+            :and_combine(gearset({ left_ring = "Mujin Band" }):when():mode_is("burst", "Single")))
+
+        local spell = stub.spell{ english = "Fire VI", type = "BlackMagic",
+                                  skill = "Elemental Magic", action_type = "Magic" }
+
+        sets.modes.burst.v = "Single"
+        snugs:do_precast(spell)
+        assert_equal(sets.modes.burst.v, "Single", "precast should not consume the mode")
+
+        snugs:do_midcast(spell)
+        assert_slot("left_ring", "Mujin Band")
+
+        snugs:do_aftercast(spell)
+        assert_equal(sets.modes.burst.v, "off")
+    end)
+
     it("still applies the burst set on the action that consumes it", function(snugs)
         snugs:add_mode("burst", { initial_value = "off", cycle_values = { "off", "Single" } })
         snugs:register_middleware("aftercast",

@@ -108,6 +108,57 @@ describe("utility sets", function()
         assert_true(stub.said("no speed utility set defined"))
     end)
 
+    it("keeps the first registration and warns on a duplicate name", function(snugs)
+        assert_true(snugs:util("speed", { right_ring = "Shneddick Ring" }))
+        assert_false(snugs:util("speed", { feet = "Herald's Gaiters" }))
+
+        snugs:do_self_command("util speed")
+        assert_slots{ right_ring = "Shneddick Ring", feet = EMPTY }
+        assert_true(stub.said("already exists"))
+        assert_true(stub.said("override"), "the warning should mention the escape hatch")
+    end)
+
+    it("replaces an existing set when override is passed", function(snugs)
+        snugs:util("speed", { right_ring = "Shneddick Ring" })
+        assert_true(snugs:util("speed", { feet = "Herald's Gaiters" }, { override = true }))
+
+        snugs:do_self_command("util speed")
+        assert_slots{ feet = "Herald's Gaiters", right_ring = EMPTY }
+    end)
+
+    it("does not warn when overriding", function(snugs)
+        snugs:util("speed", { right_ring = "Shneddick Ring" })
+        snugs:util("speed", { feet = "Herald's Gaiters" }, { override = true })
+        assert_false(stub.said("already exists"))
+    end)
+
+    it("registers normally when override is passed for a new name", function(snugs)
+        assert_true(snugs:util("speed", { feet = "Herald's Gaiters" }, { override = true }))
+        snugs:do_self_command("util speed")
+        assert_slot("feet", "Herald's Gaiters")
+    end)
+
+    it("still rejects an empty name even with override", function(snugs)
+        assert_false(snugs:util("", { feet = "x" }, { override = true }))
+        assert_true(stub.said("Set name must be provided"))
+    end)
+
+    it("leaves other registration tiers write-once", function(snugs)
+        snugs:default_idle({ head = "first" })
+        snugs:default_idle({ head = "second" })
+        snugs:do_status_change("Idle", "Engaged")
+        assert_slot("head", "first")
+    end)
+
+    it("overrides a gearset with a gearset", function(snugs)
+        snugs:util("speed", gearset({ right_ring = "Shneddick Ring" }))
+        snugs:util("speed", gearset({ feet = "Herald's Gaiters" })
+            :and_combine({ legs = "Carmine Cuisses +1" }), { override = true })
+
+        snugs:do_self_command("util speed")
+        assert_slots{ feet = "Herald's Gaiters", legs = "Carmine Cuisses +1", right_ring = EMPTY }
+    end)
+
     it("evaluates a gearset stored as a utility set", function(snugs)
         buffactive["Diffusion"] = true
         snugs:util("blu", gearset({ head = "base" })

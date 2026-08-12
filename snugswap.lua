@@ -409,12 +409,16 @@ function SnugSwap:midcast_all(keys, set)
     end
 end
 
-function SnugSwap:add(setTable, name, set)
+function SnugSwap:add(setTable, name, set, opts)
+    opts = opts or {}
+
     if not name or name == "" then
         snugs_error("Set name must be provided.")
         return false
-    elseif setTable[name] then
-        snugs_warn("set_duplicate_" .. name, "Set with name '", name, "' already exists and will be overwritten.")
+    elseif setTable[name] and not opts.override then
+        snugs_warn("set_duplicate_" .. name,
+            "Set with name '", name, "' already exists; keeping the first registration. ",
+            "Pass { override = true } to replace it.")
         return false
     end
 
@@ -469,8 +473,11 @@ function SnugSwap:bind_modes()
     end
 end
 
-function SnugSwap:util(name, set)
-    self:add(sets.util, name, set)
+-- opts: { override = true } replaces an existing utility set instead of keeping
+-- the first registration. Use it when a job lua needs to specialise a set that a
+-- shared include (such as a common-sets library) already registered.
+function SnugSwap:util(name, set, opts)
+    return self:add(sets.util, name, set, opts)
 end
 
 function SnugSwap:do_pet_midcast(spell)
