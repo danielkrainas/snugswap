@@ -194,18 +194,25 @@ function SnugSwap:_new_context(phase, fields)
     -- phase: 'precast', 'midcast', 'aftercast', 'pet_midcast', etc.
     -- fields: optional initial values like { spell = spell }
 
+    -- Lookups are ordered most specific first: the exact spell name, then any keys added by
+    -- middleware (spell families, custom categories), then the broader type and skill keys.
+    -- Middleware therefore runs before type/skill are appended, so a family key like "AllCure"
+    -- outranks a skill-wide "Healing Magic" registration but still loses to "Cure IV".
     local ctx = SnugContext:new(phase, fields)
     if ctx.spell then
         ctx:add_lookup(ctx.spell.english)
+    end
+
+    -- run context middleware here
+    self:_run_middleware('any', ctx)
+    self:_run_middleware(phase, ctx)
+
+    if ctx.spell then
         ctx:add_lookup(ctx.spell.type)
         if ctx.spell.skill then
             ctx:add_lookup(ctx.spell.skill)
         end
     end
-    
-    -- run context middleware here
-    self:_run_middleware('any', ctx)
-    self:_run_middleware(phase, ctx)
 
     return ctx
 end
@@ -340,6 +347,12 @@ end
 
 function SnugSwap:fastcast(name, set)
     self:add(sets.fastcast, name, set)
+end
+
+function SnugSwap:fastcast_all(keys, set)
+    for _, key in ipairs(keys) do
+        self:add(sets.fastcast, key, set)
+    end
 end
 
 function SnugSwap:default_weaponskill(set)
@@ -571,6 +584,18 @@ function SnugSwap:do_self_command(command)
             else
                 snugs_warn("invalid_debug_value_" .. tostring(modeValue), "invalid value for debug: " .. tostring(modeValue))
             end
+        elseif modeKey == "weapon" then
+            if modeValue and modeValue ~= "" then
+                if sets.weapons[modeValue] then
+                    self.current_weapon = modeValue
+                    snugs_log("equipping weapon set: " .. modeValue)
+                    self:equip_ex(ctx, sets.weapons[modeValue])
+                else
+                    snugs_warn("no_such_weapon_set_" .. tostring(modeValue), "no such weapon set: " .. tostring(modeValue))
+                end
+            else
+                snugs_warn("weapon_set_no_value", "no value provided to set weapon set")
+            end
         elseif modeKey == "trace" then
             if modeValue == 'true' then
                 self:trace(true)
@@ -742,25 +767,35 @@ function SnugSwap:equip_ex(ctx, set)
         set = set:eval(ctx)
     end
 
-    if _trace then
-        local trace_line = "Final set to equip: \n" .. "--------------------\n"
-        local slot_key = {"main", "sub", "range", "ammo", "head", "body", "hands", "legs", "feet", "neck", "waist", "left_ear", "right_ear", "left_ring", "right_ring", "back"}
-        for i, slot in ipairs(slot_key) do
-            local item = set[slot]
-            if item then
-                if type(item) == 'table' then
-                    trace_line = trace_line .. "Slot: " .. slot .. ", Item: " .. item.name .. "\n"
-                else
-                    trace_line = trace_line .. "Slot: " .. slot .. ", Item: " .. tostring(item) .. "\n"
-                end
-            end
-        end
-
-        trace_line = trace_line .. "--------------------"
-        snugs_log(trace_line)
+    -- normalize plain string slots into item tables. Work on a copy: a registered set
+    -- may be a shared literal that other registrations also reference.
+    local normalized = {}
+    for k, v in pairs(set) do
+        normalized[k] = v
     end
 
-    equip(set)
+    local slot_key = {"main", "sub", "range", "ammo", "head", "body", "hands", "legs", "feet", "neck", "waist", "left_ear", "right_ear", "left_ring", "right_ring", "back"}
+    local trace_line = "Final set to equip: \n" .. "--------------------\n"
+    for i, slot in ipairs(slot_key) do
+        local item = normalized[slot]
+        if item then
+            if type(item) ~= 'table' and item ~= "" then
+                item = { name = tostring(item) }
+                normalized[slot] = item
+            end
+
+            if _trace and type(item) == 'table' then
+                trace_line = trace_line .. "Slot: " .. slot .. ", Item: " .. item.name .. "\n"
+            end
+        end
+    end
+
+    if _trace then
+        trace_line = trace_line .. "--------------------"
+        snugs_trace(trace_line)
+    end
+
+    equip(normalized)
 end
 
 function get_set_from_path(pathOrSet)
@@ -841,6 +876,12 @@ Predicate.__index = function(self, key)
                 self:where(res)
             elseif is_predicate(res) then
                 self:and_also(res)
+            else
+                -- The factory rejected its arguments and has already reported why.
+                -- Fail closed: a predicate that was never fully built must not be
+                -- allowed to pass, or a misconfigured condition would silently
+                -- apply its gear on every action.
+                self._invalid = true
             end
             return self
         end
@@ -855,6 +896,7 @@ function Predicate:new()
         groups = {},
         _priority = 0,
         _logic = PREDICATE_LOGIC_ALL,
+        _invalid = false,
     }, Predicate)
 
     return obj
@@ -914,6 +956,10 @@ end
 
 function Predicate:eval(ctx)
     -- snugs_log("Evaluating Predicate...")
+    if self._invalid then
+        return false
+    end
+
     local result = true
 
     if self._logic == PREDICATE_LOGIC_ALL then
@@ -1391,12 +1437,44 @@ extend_predicate("key", function(key)
     end
 end)
 
+extend_predicate("any_key", function(keys)
+    if not keys or type(keys) ~= 'table' then
+        snugs_error("any_key requires a table of keys.")
+        return
+    end
+
+    return function(ctx)
+        for _, key in ipairs(keys) do
+            if ctx:has_lookup(key) then
+                return true
+            end
+        end
+
+        return false
+    end
+end)
+
 extend_predicate("has_pet", function(v)
     if v == nil then
         v = true
     end
 
     return function() return pet and pet.isvalid == v end
+end)
+
+extend_predicate("target_self", function(v)
+    if v == nil then
+        v = true
+    end
+
+    return function(ctx)
+        if not ctx.spell then return false end
+        -- Coerce to a boolean before comparing: with no target this would otherwise
+        -- yield nil, and `nil == false` is false, so a spell with no target would
+        -- match neither target_self(true) nor target_self(false).
+        local is_self = ctx.spell.target ~= nil and ctx.spell.target.id == player.id
+        return is_self == v
+    end
 end)
 
 GearsetWithOptions = {}
@@ -1561,10 +1639,9 @@ function GearsetWithOptions:eval(ctx)
 
     local set = self.set
     
-    -- snugs_log("-------#1 ".. tostring(#set))
+    snugs_trace("-------#1 ".. tostring(#set))
     if self.sourceModeName then
-        -- snugs_log("-------#2 ".. tostring(#set))
-        -- snugs_log("Evaluating gearset from mode: " .. tostring(self.sourceModeName))
+        snugs_trace("Evaluating gearset from mode: " .. tostring(self.sourceModeName))
         set = self:eval_mode(ctx)
     end
     
@@ -1583,7 +1660,7 @@ function GearsetWithOptions:eval(ctx)
 
     set = set_combine({}, set)
 
-    -- snugs_log("-------#3 ".. tostring(#set))
+    snugs_trace("-------#3 ".. tostring(#set))
     -- if we have any overlays, combine them
     for _, overlay in ipairs(self.overlays) do
         if type(overlay) == 'table' then
@@ -1597,7 +1674,7 @@ function GearsetWithOptions:eval(ctx)
         end
     end
 
-    -- snugs_log("-------#4 ".. tostring(#set))
+    snugs_trace("-------#4 ".. tostring(#set))
 
     return set
 end
@@ -1702,22 +1779,35 @@ function SelectorSet:eval(ctx)
     return {}
 end
 
-function spell_families(ctx, next)
-    if ctx.spell then
-        if ctx.spell.type == "Ninjutsu" then
-            -- get name of spell without ": Ichi/Ni/San" suffix
-            local base_name = ctx.spell.english:match("^(.-):%s*(Ichi|Ni|San)$")
-            if base_name then
-                ctx:add_lookup("All" .. base_name)
-            end
-        else
-            -- get name of spell without "I/II/III/IV/V/VI" suffix
-            local base_name = ctx.spell.english:match("^(.-)%s*(I|II|III|IV|V|VI)$")
-            if base_name then
-                ctx:add_lookup("All" .. base_name)
-            end
-        end
+local NINJUTSU_TIERS = { Ichi = true, Ni = true, San = true }
+local SPELL_TIERS = { I = true, II = true, III = true, IV = true, V = true, VI = true }
+
+-- Lua patterns have no alternation, so we can't match "(I|II|III)" directly. Instead capture
+-- the trailing token generically and check it against the known tier names.
+local function strip_spell_tier(name, tiers, pattern)
+    local base, tier = name:match(pattern)
+    if base and base ~= "" and tiers[tier] then
+        return base
     end
+
+    return name
+end
+
+-- Adds an "All<BaseName>" lookup key so every tier of a spell shares one key. Spells with no
+-- tier suffix get the key too, so "AllCure" covers Cure through Cure VI.
+function spell_families(ctx, next)
+    if not ctx.spell or not ctx.spell.english then return end
+
+    local base_name
+    if ctx.spell.type == "Ninjutsu" then
+        -- "Katon: Ni" -> "Katon"
+        base_name = strip_spell_tier(ctx.spell.english, NINJUTSU_TIERS, "^(.-):%s*(%a+)$")
+    else
+        -- "Cure IV" -> "Cure"
+        base_name = strip_spell_tier(ctx.spell.english, SPELL_TIERS, "^(.-)%s+(%u+)$")
+    end
+
+    ctx:add_lookup("All" .. base_name)
 end
 
 function friendly_ninjutsu_helpers(ctx, next)
