@@ -1100,6 +1100,13 @@ my_whm.lua
 If a shared include such as `dek.lua` sits alongside your job luas it is loaded for real, so
 interactions with it — a job set being shadowed by a common one, say — show up rather than hiding.
 
+### Cutting a release
+
+Bump [`VERSION`](VERSION) and the `VERSION` field in `snugswap.lua`, commit, then run the **Release**
+workflow from the Actions tab. It tags `v<VERSION>`, runs the suite, and attaches `snugswap.lua` to
+the release. It refuses to run if the two version strings disagree or if that tag has already been
+released.
+
 ## ✦ License
 
 This project is released under the [CC0 Public Domain Dedication](https://creativecommons.org/publicdomain/zero/1.0/).
