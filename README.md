@@ -1066,6 +1066,40 @@ library without the game. Each test reloads `snugswap.lua` from scratch, so noth
 them. Every file in [`templates/`](templates/) is covered too — each one has to load, register
 without warnings, and survive being driven through all of its modes.
 
+### Checking your own job luas
+
+`jobcheck` runs the same fake environment against your real job files, so you can find problems at
+your desk instead of in an alliance. Point it at your GearSwap data folder:
+
+```text
+make jobs JOBS=~/Windower/addons/GearSwap/data
+```
+
+It reports the things a file *says* but does not do — a set registered in a tier that never fires, a
+condition attached to the wrong half of an `and_combine`, an undefined name that silently becomes
+nil, a duplicate registration that is quietly discarded, a slot named twice in one set. It makes no
+judgement about whether your gear is good.
+
+Snapshots answer the other question: *did my edit change anything I did not mean to change?*
+
+```text
+make snapshot JOBS=~/Windower/addons/GearSwap/data   # record what each file equips
+make verify   JOBS=~/Windower/addons/GearSwap/data   # diff against it later
+```
+
+`snapshot` walks every file through each scenario — idle, engaged, low HP, low MP, pet out — and
+every value of every mode, recording the gear each action resolves to. `verify` re-runs that and
+shows a diff, so an accidental change surfaces by name:
+
+```text
+my_whm.lua
+  -   precast Cure IV          head=Carmine Mask +1
+  +   precast Cure IV          -
+```
+
+If a shared include such as `dek.lua` sits alongside your job luas it is loaded for real, so
+interactions with it — a job set being shadowed by a common one, say — show up rather than hiding.
+
 ## ✦ License
 
 This project is released under the [CC0 Public Domain Dedication](https://creativecommons.org/publicdomain/zero/1.0/).

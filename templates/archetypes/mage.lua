@@ -33,7 +33,7 @@ function get_sets()
     })
 
     -- This is what makes "burst" reset itself after one spell.
-    snugs:register_middleware("any",
+    snugs:register_middleware("aftercast",
         create_once_mode_transition("burst", "off", when():mode_is("burst", "on")))
 
     -- ------------------------------------------------------------------

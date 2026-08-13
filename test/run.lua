@@ -17,6 +17,7 @@ local FILES = {
     "commands_test.lua",
     "middleware_test.lua",
     "templates_test.lua",
+    "jobcheck_test.lua",
 }
 
 local file_filter, test_filter

@@ -27,7 +27,7 @@ function get_sets()
         cycle_values  = {"off", "on"},
     })
 
-    snugs:register_middleware("any",
+    snugs:register_middleware("aftercast",
         create_once_mode_transition("burst", "off", when():mode_is("burst", "on")))
 
     snugs:default_weaponset(gearset_from_mode("style", {
